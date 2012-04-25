@@ -1,0 +1,366 @@
+<html lang="ko">
+<head>
+<script src="/socket.io/socket.io.js"></script>
+<script src="http://code.jquery.com/jquery-1.6.2.min.js"></script>
+<script type="text/javascript" src="http://maps.google.com/maps/api/js?sensor=true&language=ko&region=GB"></script>
+<meta charset="utf-8">
+<script>
+
+var is_mobile=0;
+var agent = navigator.userAgent;
+if (agent.match(/iPhone/) != null || agent.match(/iPod/) != null) {
+	document.write('<meta name="viewport" content="minimum-scale=1.0,maximum-scale=1.0,initial-scale=1.0,user-scalable=no" />');
+}else if(agent.match(/Mobile/)){
+	document.write('<meta name="viewport" content="minimum-scale=0.75,maximum-scale=0.75,initial-scale=0.75,user-scalable=no" />');
+	is_mobile =1;
+}
+
+</script>
+
+<style type="text/css">
+	#message_box{
+		color:#eee;
+		background-color:#333;
+		width:100%;
+		height:80%;
+		overflow-y:auto;
+	}
+	
+	span.cmd{
+		font-weight:bold;
+		color:#d55;
+	}
+
+	span.msg{
+		font-weight:bold;
+		color:#21D400;
+	}
+
+	p,h3{
+		padding:0;
+		margin:0;
+	}
+	#input_box{
+		border:solid 1px #333;
+		background-color:
+		font-weight:bold;
+		width:100%;
+	}
+
+	#pop_layer {
+		position:absolute;
+		font-size:150%;
+		color:yellow;
+		width:40%;
+		height:40%;
+		top : 10%;
+		display:none;
+	}
+
+	#pop{
+		position:absolute;
+		top:0;
+		left:0;
+		width:99%;
+		height:99%;
+		display:none;
+		background-color:#eee;
+		border:solid 1px #000;
+	}
+	#map_canvas{
+		width:100%;
+		height:100%;
+	}
+	#close_btn{
+		cursor:hand;
+	}
+</style>
+
+</head>
+<body>
+<div id="message_box"></div>
+<input type="text" id="input_box">
+
+<div id="pop_layer"></div>
+<div id="pop">
+	<h3 style="float:left;">사용자 위치   </h1>
+	<h3 id="close_btn" style="text-align:right;padding-right:10px;">X</h3>
+	<div id="map_canvas"></div>
+</div>
+</body>
+<script>
+
+
+
+////
+// @breif WEB
+//
+//
+////
+var WEB = {};
+WEB = {
+	_SOCKET	: {},
+	_URL	: 'http://203.236.215.249:8000',
+	user	: {},
+	init	: function(){
+		var self = WEB;
+		self.UI.init();
+		self.CONSOLE.init();	
+		self._SOCKET = io.connect(self._URL);
+		self._SOCKET.on('recieve_msg', function(msg){self.CONSOLE.recieve(msg)});
+		self._SOCKET.on('set_user', function(user){self.user = user
+			navigator.geolocation.getCurrentPosition(function(position){
+				WEB.CONSOLE.send_geo({"user" : self.user , "geo" : position});
+			},function(e){});
+		});
+
+
+	}
+}
+
+////
+// @breif WEB
+//
+//
+////
+WEB.UI = {
+	$message_box	: $("#message_box"),
+	$input_box		: $("#input_box"),
+	$pop_layer		: $("#pop_layer"),
+	$pop			: $("#pop"),
+	$map_canvas		: $("#map_canvas"),
+	$close_btn		: $("#close_btn"),
+	init	: function(){
+		var self = this;
+		self.bind();
+	},
+	bind	: function(){
+		var self = this;
+		self.$input_box.keyup(function(e){
+			if(e.keyCode == 13){
+				WEB.CONSOLE.send(self.$input_box.val());
+				self.$input_box.val("");
+			}
+		}); 
+
+		self.$pop_layer.css({
+			"left"	: ((window.screen.availWidth/2) - (parseInt(self.$pop_layer.width())/2)) + "px"
+		});
+
+		self.$close_btn.bind("click",function(){
+			self.$pop.hide();
+		});
+
+	}
+}
+
+////
+// @breif WEB
+//
+//
+////
+WEB.GEO = {
+	map		: {},
+	lat		: 37.49218809036796,
+	lng		: -233.01258759006214,
+	loader	: "",
+	users	: {},
+	init	: function(){
+		var self = this;
+		self.getGeo();
+		WEB.UI.$pop.show();
+
+	},
+	getGeo	: function(){
+		var self = this;
+		navigator.geolocation.getCurrentPosition(self.load, self.load);
+	},
+	bind 	: function(){
+		var self = this;
+		google.maps.event.addListener( self.map, 'zoom_changed', function(){
+			if(self.loader.id == WEB.user.id){
+				console.log(self.loader.id);
+				WEB.CONSOLE.zoom_changed(self.map.getZoom());
+			}
+		});
+		google.maps.event.addListener( self.map, 'center_changed', function(event){
+			if(self.loader.id == WEB.user.id){
+				WEB.CONSOLE.center_changed(self.map.getCenter());
+			}
+		});
+
+		google.maps.event.addListener( self.map, 'click', function(event){
+		  	var marker = new google.maps.Marker({
+				position: new google.maps.LatLng(event.latLng.$a,event.latLng.ab), 
+				map: self.map,
+				animation: "DROP",
+				title: WEB.user.ip
+		  	});
+			WEB.CONSOLE.marking(event.latLng);
+		});
+
+		google.maps.event.addListener( self.map, 'maptypeid_changed', function(event){
+			if(self.loader.id == WEB.user.id){
+				WEB.CONSOLE.map_changed(self.map.getMapTypeId());
+			}
+		});
+	
+	},
+	load	: function(position){
+		var self = WEB.GEO;
+		if(position.coords){
+			self.lat = position.coords.latitude;
+			self.lng = position.coords.longitude;
+		}
+		var latlng = new google.maps.LatLng(self.lat , self.lng);
+		var myOptions = {
+		  zoom: 18,
+		  center: latlng,
+		  mapTypeId: google.maps.MapTypeId.ROADMAP 
+		};
+		self.map = new google.maps.Map(document.getElementById("map_canvas"), myOptions);
+		self.bind();
+
+		self.mark(self.users);
+	},
+	zoom_changed	: function(obj){
+		var self = this;
+		self.map.setZoom(obj.value);
+
+	},
+	marking			: function(obj){
+		var self =this;
+	  	var marker = new google.maps.Marker({
+			position: new google.maps.LatLng(obj.value.$a,obj.value.ab), 
+			map: self.map
+		});
+	},
+	center_changed	: function(obj){
+		var self = this;
+		var current_position = new google.maps.LatLng(obj.value.$a, obj.value.ab);
+		self.map.setCenter(current_position);
+	},
+	map_changed	: function(obj){
+		var self = this;
+		self.map.setMapTypeId(obj.value);
+		console.log(self.map.setStreetView(self.map.getStreetView()));
+	},
+	mark	: function(users){
+		var self = WEB.GEO;
+		var marker = {};
+	   for(var id in users){
+		  var once = users[id];
+		  if(once.geo == undefined) continue;
+		  marker[id] = new google.maps.Marker({
+				position: new google.maps.LatLng(once.geo.coords.latitude, once.geo.coords.longitude), 
+				map: self.map
+		  });
+
+		  infowindow  = new google.maps.InfoWindow({
+						  content : "<span style='color:red'>"+once.ip+"</span>",
+						  size    : new google.maps.Size(50,50)
+						});
+		  (function(marker){
+		  	google.maps.event.addListener(marker, 'click', function(){ infowindow.open(self.map,marker);});
+		  })(marker[id])
+		}
+	
+	}
+}
+
+////
+// @breif WEB
+//
+//
+////
+WEB.CONSOLE = {
+	init	: function(){
+		var self = this;
+	},
+	recieve : function(result){
+		var self = this;
+		if(result.mode == "msg"){
+			WEB.UI.$pop_layer.html(result.send_msg);
+			WEB.UI.$pop_layer.show("fast");	
+		}else if(result.mode == "map" ){
+			if(result.type == "all_open"){
+				WEB.GEO.loader = result.loader;
+				WEB.GEO.users = result.users;
+				WEB.GEO.init();
+			}else if(result.type == "zoom_changed"){
+				WEB.GEO.zoom_changed(result);
+			}else if(result.type == "center_changed"){
+				WEB.GEO.center_changed(result);
+			}else if(result.type == "marking"){
+				WEB.GEO.marking(result);
+			}else if(result.type == "map_changed"){
+				WEB.GEO.map_changed(result);
+			}
+			return false;
+		}
+
+		str = result.msg.replace(new RegExp("(\\n)",'gim'),"</p>\r<p>");
+		str = "<p>" + str  + "<p>";
+
+		WEB.UI.$message_box.append(str);
+		WEB.UI.$message_box.scrollTop(document.getElementById('message_box').scrollHeight);
+		setTimeout(function(){ WEB.UI.$pop_layer.hide("slow");},1000);	
+	},
+	send	: function(cmd){
+		var self = this;
+
+		if(cmd == "clear"){
+			WEB.UI.$message_box.html("");
+			return 0;
+		}
+		WEB._SOCKET.emit('write_message',cmd)	
+	},
+	zoom_changed	: function(level){
+		var self = this;
+		WEB._SOCKET.emit('zoom_changed',level)	
+	},
+	center_changed	: function(latLng){
+		var self = this;
+		WEB._SOCKET.emit('center_changed',latLng)	
+	},
+	map_changed	: function(mapId){
+		var self = this;
+		WEB._SOCKET.emit('map_changed',mapId)	
+	},
+	marking			: function(latLng){
+		var self = this;
+		WEB._SOCKET.emit('marking',latLng)	
+	},
+	send_geo		: function(latLng){
+		var self = this;
+		WEB._SOCKET.emit('send_geo',latLng)	
+	},
+	geo		: function(){
+		var self = this;
+		WEB.GEO.init();
+		WEB.UI.$pop.show();
+
+		/*
+		navigator.geolocation.getCurrentPosition(
+			function(position){
+				console.log(position)
+				var lat = position.coords.latitude;
+			    var lng = position.coords.longitude;
+				alert(lat);
+			},
+			function(error){
+				console.log(error)
+			}
+		);
+		*/  
+	}
+}
+
+$(function(){
+	WEB.init();
+});
+
+
+</script>
+</html>
+
